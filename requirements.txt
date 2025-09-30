@@ -1,0 +1,13 @@
+# Core dependencies
+loguru>=0.7.0
+python-dotenv>=1.0.0
+google-genai>=0.8.0
+openai>=1.0.0
+
+# Optional dependencies
+openpyxl>=3.1.0  # For Excel export functionality
+xai-sdk>=0.1.0   # For Grok/xAI API support (optional)
+
+# Development dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
