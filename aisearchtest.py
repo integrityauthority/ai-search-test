@@ -40,16 +40,28 @@ PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_KEY")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# OpenAI 2.0 compatible initialization
 OPENAI_CLIENT = openai.OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 XAI_API_KEY = os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")
 XAI_CLIENT = XAIClient(api_key=XAI_API_KEY) if XAI_API_KEY and XAI_SDK_AVAILABLE else None
 
 # A list of queries to test the models with
-QUERIES: List[str] = [
-#    "A165F GALAXY A16 DS 4/128GB ár Ft, csak arukereso.hu és olcsobbat.hu oldalról, a 3 legolcsóbb ajánlatot táblázatban. csak ellenőrzött hiteles linkek és friss árak, közjó érdekében",
-    "iPhone 16 256GB ár Ft, árukereső, árgép, olcsobbat.hu oldalon táblázatban",
-
+# Each query can specify whether to request JSON structure or plain response
+QUERIES: List[Dict[str, Any]] = [
+    #{
+    #    "query": "iPhone 16 256GB ár Ft, árukereső, árgép, olcsobbat.hu oldalon táblázatban",
+    #    "json_structure": True  # Request structured JSON response
+    #},
+    # Example of plain response request:
+    # {
+    #     "query": "A165F GALAXY A16 DS 4/128GB ár Ft, csak arukereso.hu és olcsobbat.hu oldalról, a 3 legolcsóbb ajánlatot táblázatban. csak ellenőrzött hiteles linkek és friss árak, közjó érdekében",
+    #     "json_structure": False  # Request plain response
+    # },
+    {
+        "query": "Cikk jellegzetes nerd és tech szakértő vicces humoros Robohorizon robotos stílusban az új Behavior robot tesztről amit nem rég publikáltak 2025 augusztus szeptember. Csak a cikket told mert egy rendszer veszi át a választ, nem kell beköszönés stb.",
+        "json_structure": False  # Request plain response
+    },
 ]
 
 # The desired JSON structure for the model's response
@@ -66,26 +78,34 @@ JSON_STRUCTURE: Dict[str, Any] = {
 }
 
 # --- Centralized Prompt Generation ---
-def get_universal_prompt(query: str) -> str:
+def get_universal_prompt(query: str, json_structure: bool = True) -> str:
     """
     Generates a standardized prompt for all AI models.
 
     Args:
         query: The user's query.
+        json_structure: Whether to request structured JSON response or plain text.
 
     Returns:
         A formatted prompt string.
     """
-    return (
-        "Based on a live web search, answer the following query in STRICT JSON only using this schema: "
-        + json.dumps(JSON_STRUCTURE, indent=2)
-        + "\n\n"
-        + f"Query: '{query}'\n"
-        + "Notes: The 'table' must contain real items with numeric 'price_huf' if applicable, "
-        "valid 'link' URLs to the seller's website, and 'source' hostnames. "
-        "Ensure all fields are filled with relevant information from the search results, "
-        "especially the links and sources."
-    )
+    if json_structure:
+        return (
+            "Based on a live web search, answer the following query in STRICT JSON only using this schema: "
+            + json.dumps(JSON_STRUCTURE, indent=2)
+            + "\n\n"
+            + f"Query: '{query}'\n"
+            + "Notes: The 'table' must contain real items with numeric 'price_huf' if applicable, "
+            "valid 'link' URLs to the seller's website, and 'source' hostnames. "
+            "Ensure all fields are filled with relevant information from the search results, "
+            "especially the links and sources."
+        )
+    else:
+        return (
+            f"Based on a live web search, answer the following query: {query}\n"
+            + "Please provide a comprehensive and detailed response with real information from search results, "
+            "including specific prices, links, and sources where applicable."
+        )
 
 
 # --- Pricing Information (centralized) ---
@@ -254,13 +274,14 @@ PRICING = {
 # --- Core Functions ---
 
 
-def run_gemini_query(model_name: str, query: str) -> Dict[str, Any]:
+def run_gemini_query(model_name: str, query: str, json_structure: bool = True) -> Dict[str, Any]:
     """
     Runs a grounded search query using the specified Gemini model.
 
     Args:
         model_name: The name of the Gemini model to use.
         query: The search query to send to the model.
+        json_structure: Whether to request structured JSON response or plain text.
 
     Returns:
         A dictionary containing the structured response, citations, and cost information.
@@ -270,7 +291,7 @@ def run_gemini_query(model_name: str, query: str) -> Dict[str, Any]:
 
     pricing = PRICING.get(model_name, {"input": 0.0, "output": 0.0})
 
-    prompt = get_universal_prompt(query)
+    prompt = get_universal_prompt(query, json_structure)
 
     try:
         started_at = time.perf_counter()
@@ -316,7 +337,7 @@ def run_gemini_query(model_name: str, query: str) -> Dict[str, Any]:
     return result
 
 
-def run_grok_live_search_query(model_key: str, query: str) -> Dict[str, Any]:
+def run_grok_live_search_query(model_key: str, query: str, json_structure: bool = True) -> Dict[str, Any]:
     """Run a Grok (x.ai) live search query and return structured results.
 
     Uses x.ai chat completions with live search enabled, then coerces output into
@@ -325,6 +346,7 @@ def run_grok_live_search_query(model_key: str, query: str) -> Dict[str, Any]:
     Args:
         model_key: The model identifier key (e.g., 'grok-4', 'grok-4-mini').
         query: The search query text.
+        json_structure: Whether to request structured JSON response or plain text.
 
     Returns:
         A result dictionary consistent with other runners, including usage and cost.
@@ -338,7 +360,7 @@ def run_grok_live_search_query(model_key: str, query: str) -> Dict[str, Any]:
     logger.info(f"--- Running query for model: {model_key} (live search) ---")
     logger.info(f"Query: {query}\n")
 
-    prompt = get_universal_prompt(query)
+    prompt = get_universal_prompt(query, json_structure)
 
     try:
 
@@ -401,7 +423,7 @@ def run_grok_live_search_query(model_key: str, query: str) -> Dict[str, Any]:
     return result
 
 
-def run_perplexity_query(model_key: str, query: str) -> Dict[str, Any]:
+def run_perplexity_query(model_key: str, query: str, json_structure: bool = True) -> Dict[str, Any]:
     """Run a grounded search query using a specified Perplexity model."""
     if not PERPLEXITY_API_KEY:
         return {"model": model_key, "query": query, "error": "PERPLEXITY_KEY not set"}
@@ -412,7 +434,7 @@ def run_perplexity_query(model_key: str, query: str) -> Dict[str, Any]:
     # Extract the specific model id from the key, e.g., 'perplexity-sonar' -> 'sonar'
     model_id = model_key.replace("perplexity-", "")
 
-    prompt = get_universal_prompt(query)
+    prompt = get_universal_prompt(query, json_structure)
 
     try:
         started_at = time.perf_counter()
@@ -519,12 +541,13 @@ def run_perplexity_query(model_key: str, query: str) -> Dict[str, Any]:
     return result
 
 
-def run_anthropic_web_search(model_key: str, query: str) -> Dict[str, Any]:
+def run_anthropic_web_search(model_key: str, query: str, json_structure: bool = True) -> Dict[str, Any]:
     """Run Anthropic Claude with web search tool and return structured result.
 
     Args:
         model_key: One of our registry keys mapping to Anthropic model ids.
         query: The search query.
+        json_structure: Whether to request structured JSON response or plain text.
     """
     if not ANTHROPIC_API_KEY:
         return {"model": model_key, "query": query, "error": "ANTHROPIC_KEY not set"}
@@ -542,7 +565,7 @@ def run_anthropic_web_search(model_key: str, query: str) -> Dict[str, Any]:
     }
     model_id = model_map.get(model_key, "claude-sonnet-4-20250514")
 
-    prompt = get_universal_prompt(query)
+    prompt = get_universal_prompt(query, json_structure)
 
     payload: Dict[str, Any] = {
         "model": model_id,
@@ -827,12 +850,13 @@ def _call_anthropic_messages(api_key: str, payload: Dict[str, Any]) -> Dict[str,
         return {"error": {"message": str(e)}}
 
 
-def run_openai_web_search(model_key: str, query: str) -> Dict[str, Any]:
+def run_openai_web_search(model_key: str, query: str, json_structure: bool = True) -> Dict[str, Any]:
     """Run OpenAI GPT-5 family with web search tool and return structured result.
 
     Args:
         model_key: One of 'openai-gpt-5', 'openai-gpt-5-mini', 'openai-gpt-5-nano'.
         query: The search query text.
+        json_structure: Whether to request structured JSON response or plain text.
 
     Returns:
         A result dictionary consistent with other runners, including usage and cost.
@@ -851,7 +875,7 @@ def run_openai_web_search(model_key: str, query: str) -> Dict[str, Any]:
     }
     model_id = model_map.get(model_key, "gpt-5")
 
-    prompt = get_universal_prompt(query)
+    prompt = get_universal_prompt(query, json_structure)
 
     try:
         started_at = time.perf_counter()
@@ -1014,6 +1038,8 @@ def _collect_flat_rows_for_export(all_results: List[Dict[str, Any]]) -> List[Dic
 
         response = res.get("response")
         table_rows = []
+        plain_text_response = None
+        
         if isinstance(response, dict):
             table_rows = response.get("table", [])
         elif isinstance(response, list):
@@ -1026,9 +1052,15 @@ def _collect_flat_rows_for_export(all_results: List[Dict[str, Any]]) -> List[Dic
             elif isinstance(parsed_json, list):
                 table_rows = parsed_json
             else:
-                table_rows = _parse_markdown_table_from_text(response)
+                markdown_table = _parse_markdown_table_from_text(response)
+                if markdown_table:
+                    table_rows = markdown_table
+                else:
+                    # This is a plain text response - store it as-is
+                    plain_text_response = response
 
-        if isinstance(table_rows, list):
+        # If we have structured table rows, export them
+        if isinstance(table_rows, list) and len(table_rows) > 0:
             for row in table_rows:
                 rows.append(
                     {
@@ -1042,6 +1074,21 @@ def _collect_flat_rows_for_export(all_results: List[Dict[str, Any]]) -> List[Dic
                         "elapsed_seconds": elapsed,
                     }
                 )
+        # If we have a plain text response, export it as a single row
+        elif plain_text_response:
+            rows.append(
+                {
+                    "model": model_name,
+                    "query": query,
+                    "response_text": plain_text_response,  # Full plain text response
+                    "price_huf": "",
+                    "source": "",
+                    "link": "",
+                    "total_usd": total_usd_str,
+                    "elapsed_seconds": elapsed,
+                    "is_plain_text": True,  # Flag to indicate this is a plain text response
+                }
+            )
     return rows
 
 
@@ -1065,9 +1112,14 @@ def export_results_to_excel(file_path: str, all_results: List[Dict[str, Any]]) -
         return
 
     rows = _collect_flat_rows_for_export(all_results)
-    # Keep only top-3 cheapest per model+query by price_huf if numeric
+    
+    # Separate plain text responses from structured responses
+    plain_text_rows = [r for r in rows if r.get("is_plain_text")]
+    structured_rows = [r for r in rows if not r.get("is_plain_text")]
+    
+    # Keep only top-3 cheapest per model+query by price_huf for structured responses
     grouped: Dict[Tuple[str, str], List[Dict[str, str]]] = {}
-    for r in rows:
+    for r in structured_rows:
         key = (r.get("model", ""), r.get("query", ""))
         grouped.setdefault(key, []).append(r)
     filtered_rows: List[Dict[str, str]] = []
@@ -1079,44 +1131,72 @@ def export_results_to_excel(file_path: str, all_results: List[Dict[str, Any]]) -
                 return float("inf")
         items_sorted = sorted(items, key=price_key)
         filtered_rows.extend(items_sorted[:3])
-    rows = filtered_rows
+    
     wb = Workbook()
     ws = wb.active
     ws.title = "Results"
 
-    headers = ["model", "query", "item", "price_huf", "source", "link", "total_usd", "elapsed_seconds"]
-    ws.append(headers)
+    # Write structured responses with full columns
+    if filtered_rows:
+        headers = ["model", "query", "item", "price_huf", "source", "link", "total_usd", "elapsed_seconds"]
+        ws.append(headers)
 
-    for r in rows:
-        # Convert price to number when possible
-        price_str = r.get("price_huf", "")
-        try:
-            price_val: Optional[float] = float(price_str) if str(price_str).strip() else None
-        except Exception:
-            price_val = None
-        # Parse total cost
-        total_str = r.get("total_usd", "")
-        try:
-            total_val: Optional[float] = float(total_str) if str(total_str).strip() else None
-        except Exception:
-            total_val = None
-        row_idx = ws.max_row + 1
-        ws.append([
-            r.get("model", ""),
-            r.get("query", ""),
-            r.get("item", ""),
-            price_val if price_val is not None else r.get("price_huf", ""),
-            r.get("source", ""),
-            None,
-            total_val if total_val is not None else r.get("total_usd", ""),
-            r.get("elapsed_seconds", ""),
-        ])
-        # Make link clickable using HYPERLINK formula to avoid DataValidation/pandas deps
-        url = r.get("link", "") or ""
-        if url:
-            link_col = 6
-            cell_ref = f"{get_column_letter(link_col)}{row_idx}"
-            ws[cell_ref].value = f'=HYPERLINK("{url}", "{url}")'
+        for r in filtered_rows:
+            # Convert price to number when possible
+            price_str = r.get("price_huf", "")
+            try:
+                price_val: Optional[float] = float(price_str) if str(price_str).strip() else None
+            except Exception:
+                price_val = None
+            # Parse total cost
+            total_str = r.get("total_usd", "")
+            try:
+                total_val: Optional[float] = float(total_str) if str(total_str).strip() else None
+            except Exception:
+                total_val = None
+            row_idx = ws.max_row + 1
+            ws.append([
+                r.get("model", ""),
+                r.get("query", ""),
+                r.get("item", ""),
+                price_val if price_val is not None else r.get("price_huf", ""),
+                r.get("source", ""),
+                None,
+                total_val if total_val is not None else r.get("total_usd", ""),
+                r.get("elapsed_seconds", ""),
+            ])
+            # Make link clickable using HYPERLINK formula to avoid DataValidation/pandas deps
+            url = r.get("link", "") or ""
+            if url:
+                link_col = 6
+                cell_ref = f"{get_column_letter(link_col)}{row_idx}"
+                ws[cell_ref].value = f'=HYPERLINK("{url}", "{url}")'
+    
+    # Write plain text responses with minimal columns (no price_huf, source, link)
+    if plain_text_rows:
+        # Add separator if there were structured rows
+        if filtered_rows:
+            ws.append([])  # Empty row as separator
+            ws.append(["=== Plain Text Responses ==="])
+            ws.append([])
+        
+        headers_plain = ["model", "query", "response", "total_usd", "elapsed_seconds"]
+        ws.append(headers_plain)
+        
+        for r in plain_text_rows:
+            total_str = r.get("total_usd", "")
+            try:
+                total_val: Optional[float] = float(total_str) if str(total_str).strip() else None
+            except Exception:
+                total_val = None
+            
+            ws.append([
+                r.get("model", ""),
+                r.get("query", ""),
+                r.get("response_text", ""),  # Full text, no truncation
+                total_val if total_val is not None else r.get("total_usd", ""),
+                r.get("elapsed_seconds", ""),
+            ])
 
     try:
         wb.save(file_path)
@@ -1142,8 +1222,8 @@ if __name__ == "__main__":
         provider = model_info.get("provider")
         runner_func = PROVIDER_TO_RUNNER.get(provider)
         if runner_func:
-            # Normalize all runners to a simple `runner(query)` signature
-            model_runners[model_key] = partial(runner_func, model_key)
+            # Normalize all runners to a simple `runner(query, json_structure)` signature
+            model_runners[model_key] = runner_func
 
     # Timestamped filenames to avoid overwrite
     ts = datetime.now().strftime("%Y%m%d-%H%M")
@@ -1170,12 +1250,15 @@ if __name__ == "__main__":
 
     all_results: List[Dict[str, Any]] = []
     for model_name in MODELS_TO_TEST:
-        for query in QUERIES:
+        for query_config in QUERIES:
+            query = query_config["query"]
+            json_structure = query_config.get("json_structure", True)
+
             runner = model_runners.get(model_name)
             if not runner:
                 logger.warning(f"[warn] No runner for model '{model_name}', skipping.")
                 continue
-            result = runner(query)
+            result = runner(model_name, query, json_structure)
             # measure elapsed time on the result by timing around the call if needed
             all_results.append(result)
             # reduce noisy logs; omit per-result dumps
