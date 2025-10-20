@@ -1,10 +1,6 @@
 """
 This script tests and compares the search and web grounding capabilities of various AI models.
 
-It starts with Gemini 2.5 Flash and Gemini 2.5 Flash-Lite, with plans to extend
-to other models like OpenAI, Claude, and Perplexity. The script takes a list of
-queries, sends them to the specified models, and returns a structured JSON response
-containing the model's answer, citations, and the cost of the API call.
 """
 
 import os
@@ -40,7 +36,6 @@ PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_KEY")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-# OpenAI 2.0 compatible initialization
 OPENAI_CLIENT = openai.OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 XAI_API_KEY = os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")
